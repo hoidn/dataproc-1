@@ -237,19 +237,15 @@ def summarize_params(csv_path: Path,
 
     result.to_csv(Path(csv_path) / save_template)
 
-def save_curve_fit(x, y, params: dict, spath: Path, 
-                    template: str='', 
-                    peakShape: str='voigt'):
-    """Plot curves vs data (x,y) for given curve parameters
-    """
+def plot_curve_fit(x, y, params: dict,
+                    peakShape: str='Voigt'):
+    ncurves = len(params)
     if peakShape == 'Voigt':
         func = voigtFn
     elif peakShape == 'Gaussian':
         func = gaussFn
     else: 
         print('no peak shape chosen')
-
-    ncurves = len(params)
     plt.figure(figsize=(8,8))
 
     popt = []
@@ -265,6 +261,13 @@ def save_curve_fit(x, y, params: dict, spath: Path,
             color='r', label='combined data')
     
     plt.legend()
+def save_curve_fit(x, y, params: dict, spath: Path, 
+                    template: str='', 
+                    peakShape: str='voigt'):
+    """Plot curves vs data (x,y) for given curve parameters
+    """
+
+    plot_curve_fit(x, y, params)
 
     plt.savefig(spath + template + 'peakAt_' + 
                     '{:.3f}'.format(x[np.where(y==np.max(y))[0][0]]) + '.png')
@@ -444,6 +447,7 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
         # (or up to numCurves, if no noise estimate is given).
         if curveCnt >= numCurves:
             return False
+        # TODO removing the below may cause failure in some cases
         if curveCnt == 0:
             return True
         if noise_estimate is not None:
@@ -725,4 +729,3 @@ def bayesian_block_finder(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),)
         boundaries.append(rightDatum)
     
     return np.array(boundaries)
-

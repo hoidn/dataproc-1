@@ -163,22 +163,25 @@ from ipywidgets import interactive
 import matplotlib.pyplot as plt
 import numpy as np
 
-def iplot_rows(patterns, patterns2 = None, label1 = 'raw', label2 = 'curve fit subtraction',
+def iplot_rows(*patterns_list, label1 = 'raw', label2 = 'curve fit subtraction',
               log = False, offset = 0, height = '550px'):
     """
     Plot a series of curves interactively.
     """
     plt.rcParams["figure.figsize"]=(12, 9)
+    labels = [label1, label2]
     def f(i):
         if log:
             plt.semilogy()
-        plt.plot(patterns[i] + offset, label = label1)
-        if patterns2 is not None:
-            plt.plot(patterns2[i] + offset, label = label2)
+        for j, patterns in enumerate(patterns_list):
+            if j < 2:
+                plt.plot(patterns[i] + offset, label = labels[j])
+            else:
+                plt.plot(patterns[i] + offset)
         plt.legend()
         plt.grid()
 
-    interactive_plot = interactive(f, i=(0, len(patterns)), step = 1)
+    interactive_plot = interactive(f, i=(0, len(patterns_list[0])), step = 1)
     output = interactive_plot.children[-1]
     output.layout.height = height
     return interactive_plot
@@ -224,11 +227,13 @@ def extract_single(row):
     """
     return filter_bg(row, 0, window_type = 'step', deconvolve = False, toreal = 'psd')
 
-def apply_bottom(func, arr):
+def apply_bottom(func, arr, axis = None):
     """
     apply 1d function to bottom (q) axis
     """
-    return np.apply_along_axis(func, len(arr.shape) - 1, arr)
+    if axis is None:
+        axis = len(arr.shape) - 1
+    return np.apply_along_axis(func, axis, arr)
 
 def mk_smooth(patterns, smooth_neighbor, smooth_q):
     n = len(patterns.shape)
@@ -287,6 +292,7 @@ def interprows(arr, mask):
 def get_bgmask(patterns, threshold, **kwargs):
     """
     Find peak regions and return a mask that identifies them.
+    Peak pixels map to False and background pixels map to True.
     """
     bgsubbed = reference_bgsub(patterns, **kwargs)
     bgsubbed[bgsubbed > np.percentile(bgsubbed, threshold)] = np.nan
@@ -378,8 +384,6 @@ def lowpassNd(arr, cutoff, mode = 'gaussian'):
     arr_filtered = ifftn(ifftshift(mask * arrfft))
     return arr_filtered
 
-
-
 def imshow_log(arr):
     """plot log of absolute value heatmap, with an offset
     """
@@ -456,23 +460,41 @@ def CTinterpolation(imarray, smoothing = 0):
     return combined
 
 # This function is the main entry point
-def separate_signal(patterns, cutoff = .2, mode = 'gaussian', **kwargs):
+def separate_signal(patterns, cutoff = .2, mode = 'gaussian',
+        background_after_filter = True, **kwargs):
     """
-    Decompose a dataset into high- and low-frequency components in  the
-    non-q dimensions.
-    Any rows that sum to zero are neglected.
+    Decompose a dataset into high- and low-frequency components in the
+    non-q dimensions. Any rows that sum to zero are neglected.
 
-    Returns interpolated background, raw patterns - interpolated background,
-        low-frequency non-q signal, high-frequency non-q signal)
+    If background_after_filter, the background is estimated without
+    first removing high-frequency components.
+
+    The most important keyword arguments are:
+        -cutoff: frequency cutoff for noise extraction
+        -threshold: percentage of pixels to use in the background
+        interpolation. A lower value excludes more points in and
+        surrounding peak regions and therefore gives a more conservative
+        estimate of the background.
+
+    Returns tuple:
+        (interpolated background (excluding high-frequency non-q component),
+        signal (excluding high-frequency non-q component) - interpolated background,
+        low-frequency non-q signal,
+        high-frequency non-q signal))
     """
-    # TODO take cutoff parameter for q filtering as well
-    interpolated_background = get_background(patterns, **kwargs)
-    fast_q = patterns - interpolated_background
+    # TODO filter T before background or after? need to do a more careful comparison
     # calculate the low-frequency component in xy
     nq = patterns.shape[-1]
     low_xy = np.zeros_like(patterns)
     wafer_mask = (patterns.sum(axis = (len(patterns.shape) - 1)) != 0)
     for i in range(nq):
-        low_xy[..., i] = np.absolute(lowpassNd(fill(patterns[..., i], patterns[..., i] == 0), cutoff, mode)) * wafer_mask
+        low_xy[..., i] = np.real(lowpassNd(fill(patterns[..., i], patterns[..., i] == 0), cutoff, mode)) * wafer_mask
     high_xy = patterns - low_xy
+
+#    # TODO take cutoff parameter for q filtering as well
+    if background_after_filter:
+        interpolated_background = get_background(low_xy, **kwargs)
+    else:
+        interpolated_background = get_background(patterns, **kwargs)
+    fast_q = low_xy - interpolated_background
     return interpolated_background, fast_q, low_xy, high_xy
