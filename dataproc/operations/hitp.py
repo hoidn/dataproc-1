@@ -239,6 +239,11 @@ def summarize_params(csv_path: Path,
 
 def plot_curve_fit(x, y, params: dict,
                     peakShape: str='Voigt'):
+    """
+    Plots y(x), individual fit curves, and sum of fit curves.
+
+    Returns y values for each fit curve.
+    """
     ncurves = len(params)
     if peakShape == 'Voigt':
         func = voigtFn
@@ -249,11 +254,13 @@ def plot_curve_fit(x, y, params: dict,
     plt.figure(figsize=(8,8))
 
     popt = []
+    curve_ys = []
     for j, (_, l) in zip(range(ncurves), params.items()):
         temp = list(l.values())
         popt += temp
         plt.plot(x, func(x, *l.values()), '.', alpha=0.5, 
                 label='opt. curve {:.0f}'.format(j))
+        curve_ys.append(func(x, *l.values()))
 
 
     plt.plot(x, y, marker='s', color='k', label='data')
@@ -261,6 +268,8 @@ def plot_curve_fit(x, y, params: dict,
             color='r', label='combined data')
     
     plt.legend()
+    return curve_ys
+
 def save_curve_fit(x, y, params: dict, spath: Path, 
                     template: str='', 
                     peakShape: str='voigt'):
