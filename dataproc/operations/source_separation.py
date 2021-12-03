@@ -44,6 +44,7 @@ def clip_low(x, frac_zero, invert = False, inc_window = False):
     mask = clip_low_window(x, frac_zero, invert = invert, inc_window = inc_window)
     return x2, mask
 
+import pdb
 def clip_low_window(x, frac_zero, invert = False, inc_window = False):
     x = ifftshift(x)
     N = len(x)
@@ -52,13 +53,14 @@ def clip_low_window(x, frac_zero, invert = False, inc_window = False):
     mask = np.ones_like(x)
     mask[:( nz) // 2 ] = 0
     mask[(-nz) // 2:] = 0
+    if np.random.random() < .1:
+        pdb.set_trace()
     if inc_window:
         window = np.blackman(N)
         mask *= window
     if invert:
         mask = 1 - mask
     return fftshift(mask)
-    return x2, mask
 
 def highpass_g(size, y):
     return 1 - lowpass_g(size, y)
@@ -128,7 +130,7 @@ def conv_window(sig, mode = 'same'):
     return np.convolve(sig, tmp / tmp.max(), mode =mode)
 
 def filter_bg(pattern, smooth = 1.5, window_type = 'gaussian', blackman = True,
-             deconvolve = False, invert = False, **kwargs):
+    q_cutoff = 4, deconvolve = False, invert = False, **kwargs):
     """
     Extract high-frequency component (in q) from a 2d XRD dataset by
     high-pass filtering, taking the IFFT amplitude, and applying a
@@ -139,12 +141,12 @@ def filter_bg(pattern, smooth = 1.5, window_type = 'gaussian', blackman = True,
     The option for deconvolution should be considered deprecated since
     it doesn't help with extraction.
     """
-    cutoff = 4
+    print(window_type, q_cutoff)
     window, ywf = spec_fft_2(pattern, 1000)
     if window_type == 'gaussian': #todo inversion
-        sig = if_mag(patterns, highpass_g(cutoff, ywf) * ywf, **kwargs)
+        sig = if_mag(patterns, highpass_g(q_cutoff, ywf) * ywf, **kwargs)
     elif window_type == 'step': # hard step
-        clipped, mask = clip_low(ywf, .001, invert = invert)
+        clipped, mask = clip_low(ywf, q_cutoff, invert = invert)
         if blackman:
             if invert:
                 window = 1 - window
@@ -155,7 +157,7 @@ def filter_bg(pattern, smooth = 1.5, window_type = 'gaussian', blackman = True,
     else:
         raise ValueError
     if deconvolve:
-        sig = do_rl(sig, cutoff, 2.2)
+        sig = do_rl(sig, q_cutoff, 2.2)
     sig = gf(sig, smooth)
     return sig[1000: -1000]#, mask[1000: -1000]
 
@@ -220,20 +222,23 @@ def if_mag(arr, phase = 0, truncate = False, toreal = 'psd', **kwargs):
         raise NotImplementedError
     return real
 
-def extract_single(row):
+def extract_single(row, q_cutoff =4):
     """
     Default procedure for extracting the high-frequency component of a
     single 1d diffraction pattern.
     """
-    return filter_bg(row, 0, window_type = 'step', deconvolve = False, toreal = 'psd')
+    return filter_bg(row, 0, window_type = 'step', deconvolve = False, toreal = 'psd', q_cutoff = q_cutoff)
 
-def apply_bottom(func, arr, axis = None):
+def apply_bottom(func, arr, axis = None, **kwargs):
     """
     apply 1d function to bottom (q) axis
     """
+    def new_f(*args):
+        return func(*args, **kwargs)
+
     if axis is None:
         axis = len(arr.shape) - 1
-    return np.apply_along_axis(func, axis, arr)
+    return np.apply_along_axis(new_f, axis, arr)
 
 def mk_smooth(patterns, smooth_neighbor, smooth_q):
     n = len(patterns.shape)
@@ -254,13 +259,15 @@ def mk_smooth(patterns, smooth_neighbor, smooth_q):
 #    else:
 #        return ValueError
 
-def reference_bgsub(patterns, smooth_q = 1.7, smooth_neighbor = 1, **kwargs):
+def reference_bgsub(patterns, smooth_q = 1.7, smooth_neighbor = 1,
+        q_cutoff = 4, **kwargs):
     """
     Extract high-frequency component (in q) from a 2d XRD dataset. This
     method distorts peak intensities but is good at identifying their
     locations.
     """
-    bgsubbed_nosmooth = apply_bottom(extract_single, patterns)
+    bgsubbed_nosmooth = apply_bottom(extract_single, patterns,
+        q_cutoff = q_cutoff)
     bgsubbed_final = gf(bgsubbed_nosmooth, mk_smooth(patterns, smooth_neighbor, smooth_q))
     bgsubbed_final *= patterns.max() / bgsubbed_final.max() #np.percentile(patterns, 99.9) / np.percentile(bgsubbed_final, 99.9)
     return bgsubbed_final
@@ -299,19 +306,20 @@ def get_bgmask(patterns, threshold, **kwargs):
     bkgmask = ~np.isnan(bgsubbed)
     return bkgmask
 
-def get_background_nan(patterns, threshold = 50, smooth_q = 1.7, smooth_neighbor = 1):
+def get_background_nan(patterns, threshold = 50, smooth_q = 1.7, smooth_neighbor = 1, q_cutoff = 4):
     # TODO smooth or not?
     smooth = mk_smooth(patterns, smooth_neighbor, smooth_q)
-    bkgmask = get_bgmask(patterns, threshold, smooth_q = smooth_q, smooth_neighbor = smooth_neighbor)
+    bkgmask = get_bgmask(patterns, threshold, smooth_q = smooth_q, smooth_neighbor = smooth_neighbor, q_cutoff = q_cutoff)
     filled_bg = interprows(patterns, bkgmask)
     smooth_bg = gf(filled_bg, smooth)
     return smooth_bg
 
-def get_background(patterns, threshold = 50, method = 'simple', smooth_q = 1.7, smooth_neighbor = 1):
+def get_background(patterns, threshold = 50, method = 'simple', smooth_q = 1.7, smooth_neighbor = 1, q_cutoff = 4):
     smooth = mk_smooth(patterns, smooth_neighbor, smooth_q)
     if method == 'simple':
         smooth_bg = get_background_nan(patterns, threshold = threshold,
-            smooth_q = smooth_q, smooth_neighbor = smooth_neighbor)
+            smooth_q = smooth_q, smooth_neighbor = smooth_neighbor,
+            q_cutoff = q_cutoff)
         mask = np.where(~np.isnan(smooth_bg))
         # TODO am i getting the higher-dimensional nearest neighbor?
         interp = NearestNDInterpolator(np.transpose(mask), smooth_bg[mask])
@@ -461,7 +469,7 @@ def CTinterpolation(imarray, smoothing = 0):
 
 # This function is the main entry point
 def separate_signal(patterns, cutoff = .2, mode = 'gaussian',
-        background_after_filter = True, **kwargs):
+        background_after_filter = True, q_cutoff = 4,**kwargs):
     """
     Decompose a dataset into high- and low-frequency components in the
     non-q dimensions. Any rows that sum to zero are neglected.
@@ -493,8 +501,10 @@ def separate_signal(patterns, cutoff = .2, mode = 'gaussian',
 
 #    # TODO take cutoff parameter for q filtering as well
     if background_after_filter:
-        interpolated_background = get_background(low_xy, **kwargs)
+        interpolated_background = get_background(low_xy, q_cutoff = q_cutoff,
+            **kwargs)
     else:
-        interpolated_background = get_background(patterns, **kwargs)
+        interpolated_background = get_background(patterns, q_cutoff = q_cutoff,
+            **kwargs)
     fast_q = low_xy - interpolated_background
     return interpolated_background, fast_q, low_xy, high_xy
