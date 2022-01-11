@@ -1,0 +1,18 @@
+{
+    "specPath": "",
+    "imagePath": "",
+    "exportPath": "fitoutput/", 
+    "expInfo": {"dist": 0.714728,
+                "center1": 248,
+                "center2": 94,
+                "detector": "Pilatus100k",
+                "wavelength": 7.29319E-11,
+                "orientation": "vertical"
+               },
+    "fitInfo": {"peakShape": "Voigt",
+                "fitMode": "fixed",
+                "numCurves": 3,
+                "blockBounds": [10,  100]
+               }
+}
+
