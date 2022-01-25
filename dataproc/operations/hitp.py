@@ -406,6 +406,8 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
     finalParams: all curve info
     FWHM: calculated FWHM's for each curve
     """
+    if len(x) == 0:
+        return None, None 
     xRange = np.ptp(x)
     maxInd = np.where(y == np.max(y))[0][0]
 
@@ -456,9 +458,9 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
         # (or up to numCurves, if no noise estimate is given).
         if curveCnt >= numCurves:
             return False
-        # TODO removing the below may cause failure in some cases
-        if curveCnt == 0:
-            return True
+#        # TODO removing the below may cause failure in some cases
+#        if curveCnt == 0:
+#            return True
         if noise_estimate is not None:
             ratio = np.sqrt(((resid**2).mean() / (noise_estimate**2).mean() ))
             print(ratio)
@@ -496,21 +498,6 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
         fit = func(x, *guessHold)
         resid = fit - y
         errorNew = np.mean(np.absolute(resid) / (y+1))
-        # if np.absolute(errorCurr - errorNew) < 0.0001:
-        #     print('no change in error: {}'.format(errorNew))
-
-        #     if curveCnt == 0: # if first peak does not change error
-        #         # build guess real guess array, update fit
-        #         guess = guessHold
-
-        #         # concatenate lists for bounds for real fit
-        #         boundLower += boundLowerPart 
-        #         boundUpper += boundUpperPart
-
-        #         # Combine bounds into tuple for input
-        #         bounds = tuple([boundLower, boundUpper])
-           
-        #     # break #end iteration
 
         # build guess real guess array, update fit
         guess = guessHold
@@ -537,6 +524,8 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
     except RuntimeError as e:
         print(e) 
         popt = np.array(guess)
+    except UnboundLocalError:# no peaks were fit
+        return None, None 
        
 
     # Calculate FWHM, area for each peak fit
