@@ -399,12 +399,15 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
                 numCurves: int=defaultFitOpts['numCurves'],
                 noise_estimate: np.ndarray = None,
                 background: np.ndarray = None,
-                stdratio_threshold: float = 2
+                stdratio_threshold: float = 2,
+                fit_sigma: bool = False
             ) -> (dict, list):
     """Fit peak segment with specified peak shape and method
     return dictionary with peak information
     finalParams: all curve info
     FWHM: calculated FWHM's for each curve
+    fit_sigma: if True, and if noise_estimate is provided, use given
+    uncertainties to weight residuals in least squares optimization.
     """
     if len(x) == 0:
         return None, None 
@@ -462,6 +465,7 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
 #        if curveCnt == 0:
 #            return True
         if noise_estimate is not None:
+            # TODO chi squared instead?
             ratio = np.sqrt(((resid**2).mean() / (noise_estimate**2).mean() ))
             print(ratio)
             if ratio < stdratio_threshold:
@@ -486,8 +490,12 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
 
         boundTemp = tuple([boundLowTemp, boundUppTemp])
         try: # Fit according to residual
-            poptTemp, pcovTemp = curve_fit(func, x, -resid, 
-                                        bounds=boundTemp, p0=guessTemp)  
+            if noise_estimate is not None and fit_sigma:
+                poptTemp, pcovTemp = curve_fit(func, x, -resid, 
+                    bounds=boundTemp, p0=guessTemp, sigma = noise_estimate)  
+            else:
+                poptTemp, pcovTemp = curve_fit(func, x, -resid, 
+                    bounds=boundTemp, p0=guessTemp)  
             #print('Fit to residual at {0}'.format(xPosGuess))
         except RuntimeError as e:
             print(e) 
@@ -519,8 +527,12 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
     # Fit full curve, refining guesses
     try:
         # Curve fit function call using guess and bounds
-        popt, pcov = curve_fit(func, x, y, 
-                                    bounds=bounds, p0=guess)
+        if noise_estimate is not None and fit_sigma:
+            popt, pcov = curve_fit(func, x, y, sigma = noise_estimate,
+                                        bounds=bounds, p0=guess)
+        else:
+            popt, pcov = curve_fit(func, x, y, 
+                                        bounds=bounds, p0=guess)
     except RuntimeError as e:
         print(e) 
         popt = np.array(guess)
