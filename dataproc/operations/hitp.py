@@ -237,12 +237,11 @@ def summarize_params(csv_path: Path,
 
     result.to_csv(Path(csv_path) / save_template)
 
-def plot_curve_fit(x, y, params: dict,
+def gen_curve_fits(x, y, params: dict,
                     peakShape: str='Voigt'):
     """
-    Plots y(x), individual fit curves, and sum of fit curves.
-
-    Returns y values for each fit curve.
+    Returns lists of y values for each fit curve given by params, with
+    an additional final element that is the sum of the individual fits.
     """
     ncurves = len(params)
     if peakShape == 'Voigt':
@@ -251,24 +250,68 @@ def plot_curve_fit(x, y, params: dict,
         func = gaussFn
     else: 
         print('no peak shape chosen')
-    plt.figure(figsize=(8,8))
 
     popt = []
     curve_ys = []
     for j, (_, l) in zip(range(ncurves), params.items()):
         temp = list(l.values())
         popt += temp
-        plt.plot(x, func(x, *l.values()), '.', alpha=0.5, 
-                label='opt. curve {:.0f}'.format(j))
         curve_ys.append(func(x, *l.values()))
 
+    curve_ys.append(func(x, *popt))
+    return curve_ys
+
+def plot_curve_fit(x, y, params: dict,
+                    peakShape: str='Voigt'):
+    """
+    Plots y(x), individual fit curves, and sum of fit curves.
+
+    Returns y values for each fit curve.
+    """
+    curve_ys = gen_curve_fits(x, y, params, peakShape)
+    ncurves = len(params)
+    for j, yj in enumerate(curve_ys[:-1]):
+        plt.plot(x, yj, '.', alpha=0.5, 
+                label='opt. curve {:.0f}'.format(j))
 
     plt.plot(x, y, marker='s', color='k', label='data')
-    plt.plot(x, func(x, *popt), 
-            color='r', label='combined data')
+    plt.plot(x, curve_ys[-1], color='r', label='combined data')
     
     plt.legend()
     return curve_ys
+
+#def plot_curve_fit(x, y, params: dict,
+#                    peakShape: str='Voigt'):
+#    """
+#    Plots y(x), individual fit curves, and sum of fit curves.
+#
+#    Returns y values for each fit curve.
+#    """
+#    ncurves = len(params)
+#    if peakShape == 'Voigt':
+#        func = voigtFn
+#    elif peakShape == 'Gaussian':
+#        func = gaussFn
+#    else: 
+#        print('no peak shape chosen')
+#    plt.figure(figsize=(8,8))
+#
+#    popt = []
+#    curve_ys = []
+#    for j, (_, l) in zip(range(ncurves), params.items()):
+#        temp = list(l.values())
+#        popt += temp
+#        plt.plot(x, func(x, *l.values()), '.', alpha=0.5, 
+#                label='opt. curve {:.0f}'.format(j))
+#        curve_ys.append(func(x, *l.values()))
+#
+#    curve_ys.append(func(x, *popt))
+#    plt.plot(x, y, marker='s', color='k', label='data')
+#    plt.plot(x, func(x, *popt), 
+#            color='r', label='combined data')
+#    
+#    plt.legend()
+#    return curve_ys
 
 def save_curve_fit(x, y, params: dict, spath: Path, 
                     template: str='', 
@@ -393,6 +436,44 @@ defaultFitOpts = {'peakShape': 'voigt', # ('voigt', 'gaussian')
                     'numCurves': 4,
                     }
 
+#def eq_m(x, lamb, mu, sigm):  # assumed signature of eq_m
+#    pass
+#
+#def cost(*params):  # simply use globally defined x and y
+#    model = eq_m(*params)
+#    return np.mean((model - y)**2)  # quadratic cost function
+#
+#def cost(params):
+#    lamb, mu, sigm = params
+#    model = eq_m(x, lamb, mu, sigm)
+#    reg = lamb**2 + mu**2 + sigm**2  # very simple: higher parameters -> higher cost
+#    regweight = 1.0  # determines relative importance of regularization vs goodness of fit
+#    return np.mean((model - y)**2)  + reg * regweight
+
+def regularized_curvefit(func, x, y, reg_scale = 1e-3, **kwargs):
+    """
+    Given a Voigt model function, add a regularization that penalizes negative offsets and then call curve_fit.
+    """
+    # TODO support shapes other than Voigt
+    
+    def model(xx, *params):
+        offsets = params[1::5]
+#        print('offsets', offsets)
+#        print((-np.min(list(offsets) + [0])))
+
+        #return func(xx, *params) - y + reg_scale * np.std(list(offsets)) # penalize negative offsets
+        #return func(xx, *params) - y + reg_scale * (-np.min(list(offsets) + [0])) # penalize negative offsets
+        #return func(xx, *params) - y - reg_scale * max(0, np.min([0, sum(offsets)]) - np.min(list(offsets))) # penalize negative offsets
+        #return (func(xx, *params) - y) * reg_scale * (-np.min(list(offsets) + [0])) # penalize negative offsets
+        #return (func(xx, *params) - y) * reg_scale * (max(0, np.min([0, sum(offsets)]) - np.min(list(offsets)))**2) # penalize negative offsets
+
+        #return np.abs(func(xx, *params) - y) + reg_scale * (-np.min(list(offsets) + [0])) # penalize negative offsets
+        # TODO This may be better in the case of data that isn't properly background subtracted, but results are similar
+        loss_scale = np.abs(func(xx, *params) - y).mean()
+        return np.abs(func(xx, *params) - y) + loss_scale * reg_scale * max(0, np.min([0, sum(offsets)]) - np.min(list(offsets))) # penalize negative offsets
+    return curve_fit(model, x, np.zeros_like(y), **kwargs)
+    #'x0', 'y0', 'I', 'alpha', 'gamma'
+
 def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
                 peakShape: str=defaultFitOpts['peakShape'], 
                 fitMode: str=defaultFitOpts['fitMode'],
@@ -400,7 +481,8 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
                 noise_estimate: np.ndarray = None,
                 background: np.ndarray = None,
                 stdratio_threshold: float = 2,
-                fit_sigma: bool = False
+                fit_sigma: bool = False,
+                **kwargs
             ) -> (dict, list):
     """Fit peak segment with specified peak shape and method
     return dictionary with peak information
@@ -408,6 +490,8 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
     FWHM: calculated FWHM's for each curve
     fit_sigma: if True, and if noise_estimate is provided, use given
     uncertainties to weight residuals in least squares optimization.
+
+    
     """
     if len(x) == 0:
         return None, None 
@@ -491,11 +575,11 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
         boundTemp = tuple([boundLowTemp, boundUppTemp])
         try: # Fit according to residual
             if noise_estimate is not None and fit_sigma:
-                poptTemp, pcovTemp = curve_fit(func, x, -resid, 
-                    bounds=boundTemp, p0=guessTemp, sigma = noise_estimate)  
+                poptTemp, pcovTemp = regularized_curvefit(func, x, -resid, 
+                    bounds=boundTemp, p0=guessTemp, sigma = noise_estimate, **kwargs)  
             else:
-                poptTemp, pcovTemp = curve_fit(func, x, -resid, 
-                    bounds=boundTemp, p0=guessTemp)  
+                poptTemp, pcovTemp = regularized_curvefit(func, x, -resid, 
+                    bounds=boundTemp, p0=guessTemp, **kwargs)  
             #print('Fit to residual at {0}'.format(xPosGuess))
         except RuntimeError as e:
             print(e) 
@@ -528,11 +612,11 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
     try:
         # Curve fit function call using guess and bounds
         if noise_estimate is not None and fit_sigma:
-            popt, pcov = curve_fit(func, x, y, sigma = noise_estimate,
-                                        bounds=bounds, p0=guess)
+            popt, pcov = regularized_curvefit(func, x, y, sigma = noise_estimate,
+                                        bounds=bounds, p0=guess, **kwargs)
         else:
-            popt, pcov = curve_fit(func, x, y, 
-                                        bounds=bounds, p0=guess)
+            popt, pcov = regularized_curvefit(func, x, y, 
+                                        bounds=bounds, p0=guess, **kwargs)
     except RuntimeError as e:
         print(e) 
         popt = np.array(guess)
