@@ -11,7 +11,7 @@
                },
     "fitInfo": {"peakShape": "Voigt",
                 "fitMode": "fixed",
-                "numCurves": 3,
+                "numCurves": 4,
                 "blockBounds": [10,  100]
                }
 }

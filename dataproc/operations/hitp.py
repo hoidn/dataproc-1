@@ -29,6 +29,7 @@ from pyFAI.azimuthalIntegrator import AzimuthalIntegrator as AzInt
 from .peakShapes import voigtFn, gaussFn
 from .utils import folder_select
 
+from xrdc import geometry
 # To-Do: make type alisases (list[Path's])
 
 
@@ -436,43 +437,51 @@ defaultFitOpts = {'peakShape': 'voigt', # ('voigt', 'gaussian')
                     'numCurves': 4,
                     }
 
-#def eq_m(x, lamb, mu, sigm):  # assumed signature of eq_m
-#    pass
-#
-#def cost(*params):  # simply use globally defined x and y
-#    model = eq_m(*params)
-#    return np.mean((model - y)**2)  # quadratic cost function
-#
-#def cost(params):
-#    lamb, mu, sigm = params
-#    model = eq_m(x, lamb, mu, sigm)
-#    reg = lamb**2 + mu**2 + sigm**2  # very simple: higher parameters -> higher cost
-#    regweight = 1.0  # determines relative importance of regularization vs goodness of fit
-#    return np.mean((model - y)**2)  + reg * regweight
 
-def regularized_curvefit(func, x, y, reg_scale = 1e-3, **kwargs):
+def peak_edge_cost(centers, x, buffer = 2., padding = 20):
     """
-    Given a Voigt model function, add a regularization that penalizes negative offsets and then call curve_fit.
+    Impose a penalty for Voigt profiles with center near the edge of a
+    block.
+    """
+    start, end = x[0], x[-1]
+    range = x[-1] - x[0]
+    buffer = min(range / 4, buffer)
+    centers = np.array(centers)
+    # Linearly extend x so that we can evaluate cost for peaks with centers outside
+    # the fitting range
+    dx = x[1] - x[0]
+    x = np.pad(np.array(x), (padding, padding))
+    padramp = dx * np.ones(padding).cumsum()
+    x[:padding] = -padramp[::-1] + x[padding]
+    x[-padding:] = padramp + x[-padding - 1]
+    offset_left = start - centers + buffer
+    cmpleft = (offset_left) * np.heaviside(offset_left, 0)
+    offset_right = centers - end + buffer
+    cmpright = (offset_right) * np.heaviside(offset_right, 0)
+    costs = np.max(np.vstack((cmpleft, cmpright)), axis = 0)
+    return costs
+
+def regularized_curvefit(func, x, y, reg_scale = 1e-3, reg_edge = 1, **kwargs):
+    """
+    Given a Voigt model function, add a regularization that penalizes
+    negative offsets and then call curve_fit.
     """
     # TODO support shapes other than Voigt
-    
     def model(xx, *params):
+        #'x0', 'y0', 'I', 'alpha', 'gamma'
         offsets = params[1::5]
-#        print('offsets', offsets)
-#        print((-np.min(list(offsets) + [0])))
-
-        #return func(xx, *params) - y + reg_scale * np.std(list(offsets)) # penalize negative offsets
-        #return func(xx, *params) - y + reg_scale * (-np.min(list(offsets) + [0])) # penalize negative offsets
-        #return func(xx, *params) - y - reg_scale * max(0, np.min([0, sum(offsets)]) - np.min(list(offsets))) # penalize negative offsets
-        #return (func(xx, *params) - y) * reg_scale * (-np.min(list(offsets) + [0])) # penalize negative offsets
-        #return (func(xx, *params) - y) * reg_scale * (max(0, np.min([0, sum(offsets)]) - np.min(list(offsets)))**2) # penalize negative offsets
-
+        centers = params[::5]
         #return np.abs(func(xx, *params) - y) + reg_scale * (-np.min(list(offsets) + [0])) # penalize negative offsets
-        # TODO This may be better in the case of data that isn't properly background subtracted, but results are similar
+        # TODO This may be better in the case of data that isn't
+        # properly background subtracted, but testing so far gives
+        # similar results
         loss_scale = np.abs(func(xx, *params) - y).mean()
-        return np.abs(func(xx, *params) - y) + loss_scale * reg_scale * max(0, np.min([0, sum(offsets)]) - np.min(list(offsets))) # penalize negative offsets
+        # penalize negative offsets and peaks that are close to block edges
+        return np.abs(func(xx, *params) - y) +\
+            loss_scale * reg_scale * max(0, np.min([0, sum(offsets)]) - np.min(list(offsets))) +\
+            reg_edge * peak_edge_cost(centers, x).sum()
+
     return curve_fit(model, x, np.zeros_like(y), **kwargs)
-    #'x0', 'y0', 'I', 'alpha', 'gamma'
 
 def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
                 peakShape: str=defaultFitOpts['peakShape'], 
@@ -543,6 +552,12 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
     def keep_fitting(curveCnt):
         # fit more peaks as long as the residual RMSE is below-threshold
         # (or up to numCurves, if no noise estimate is given).
+        # If residual increased, stop fitting
+#        try:
+#            if (resid**2).mean() >= (old_resid**2).mean():
+#                return False
+#        except NameError:
+#            pass
         if curveCnt >= numCurves:
             return False
 #        # TODO removing the below may cause failure in some cases
@@ -588,6 +603,7 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
         # Check to see if error decreased
         guessHold = guess + list(poptTemp)
         fit = func(x, *guessHold)
+        old_resid = resid
         resid = fit - y
         errorNew = np.mean(np.absolute(resid) / (y+1))
 
