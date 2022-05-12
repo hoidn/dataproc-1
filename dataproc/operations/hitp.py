@@ -544,15 +544,15 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
         func = voigtFn
         # x0 and I values to be replaced during loop
         guessTemp = [0, np.min(y), 0,
-                        xRange / 10, xRange / 10 ]
+                        xRange / 5, xRange / 5 ]
         # x bounds to be replaced
         # [x0, y0, I, alpha, gamma]
         boundLowTemp = [x[0], -np.max(y)/4, 0., 0., 0.]
-        boundUppTemp = [x[-1], np.inf, np.inf, xRange/4, xRange/4]
+        boundUppTemp = [x[-1], np.inf, np.inf, xRange/1, xRange/1]
 
         boundLowerPart = [x[0]-0.05*xRange, -np.max(y)/4, 0, 0, 0]
         boundUpperPart = [x[-1]+0.05*xRange, np.inf, np.inf, 
-                            xRange/4, xRange/4]
+                            xRange/1, xRange/1]
     elif peakShape == 'Gaussian':
         func = gaussFn     
         # x0 and I values to be replaced during loop
@@ -596,8 +596,8 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
 #        if curveCnt == 0:
 #            return True
         if noise_estimate is not None:
-            # TODO chi squared instead?
-            ratio = np.sqrt(((resid**2).mean() / (noise_estimate**2).mean() ))
+            #ratio = np.sqrt(((resid**2).mean() / (noise_estimate**2).mean() ))
+            ratio = np.sqrt(((resid / (np.abs(noise_estimate) + 1e-6))**2).mean())
             print(ratio)
             if ratio < stdratio_threshold:
                 return  False
@@ -779,6 +779,9 @@ def bayesian_block_finder(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),)
     :param y: array of y-values with same length as x
     :type y: numpy.ndarray
     """
+    # TODO check scargle paper to see the principled way of normalizing
+    # (if any)
+    y = y / np.mean(y)
     data_mode = 3
     numPts = len(x)
     if len(x) != len(y):
