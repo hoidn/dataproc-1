@@ -596,8 +596,11 @@ def fit_peak(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
 #        if curveCnt == 0:
 #            return True
         if noise_estimate is not None:
-            #ratio = np.sqrt(((resid**2).mean() / (noise_estimate**2).mean() ))
-            ratio = np.sqrt(((resid / (np.abs(noise_estimate) + 1e-6))**2).mean())
+            ratio = np.sqrt(((resid**2).mean() / (noise_estimate**2).mean() ))
+            #ratio = np.sqrt(((resid / (np.abs(noise_estimate) + 1e-6))**2).mean())
+#            print('ratio', ratio)
+#            print('resid', resid)
+#            print('noise', noise_estimate)
             print(ratio)
             if ratio < stdratio_threshold:
                 return  False
@@ -769,7 +772,8 @@ def refine_peaks(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
         return None, None 
     return generate_peakparams(x, y, popt, peakShape, curveCnt, func, bounds)
 
-def bayesian_block_finder(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),):
+def bayesian_block_finder(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
+        norm = 1):
     """bayesian_block_finder performs Bayesian Block analysis on x, y data.
 
     see Jeffrey Scargle's papers at doi: 10.1088/0004-637X/764/2/167
@@ -781,7 +785,8 @@ def bayesian_block_finder(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),)
     """
     # TODO check scargle paper to see the principled way of normalizing
     # (if any)
-    y = y / np.mean(y)
+    y = norm * y / np.mean(y)
+    print('norm', norm)
     data_mode = 3
     numPts = len(x)
     if len(x) != len(y):

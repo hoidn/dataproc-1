@@ -12,7 +12,8 @@
     "fitInfo": {"peakShape": "Voigt",
                 "fitMode": "fixed",
                 "numCurves": 2,
-                "blockBounds": [10,  100]
+                "blockBounds": [10,  100],
+		"bba_norm": 1
                }
 }
 
