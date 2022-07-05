@@ -786,7 +786,6 @@ def bayesian_block_finder(x: np.ndarray=np.ones(5,), y: np.ndarray=np.ones(5,),
     # TODO check scargle paper to see the principled way of normalizing
     # (if any)
     y = norm * y / np.mean(y)
-    print('norm', norm)
     data_mode = 3
     numPts = len(x)
     if len(x) != len(y):
