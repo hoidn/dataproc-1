@@ -13,7 +13,7 @@
                 "fitMode": "fixed",
                 "numCurves": 2,
                 "blockBounds": [10,  100],
-		"bba_norm": 1
+		"bba_norm": 100
                }
 }
 
